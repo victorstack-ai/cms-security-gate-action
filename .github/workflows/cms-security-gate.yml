@@ -1,0 +1,140 @@
+name: CMS Security Gate
+
+on:
+  workflow_call:
+    inputs:
+      cms:
+        description: "Target preset: wordpress, drupal, or auto."
+        required: false
+        default: "auto"
+        type: string
+      fail-on-severity:
+        description: "Fail threshold: low, medium, high, critical."
+        required: false
+        default: "high"
+        type: string
+      python-version:
+        description: "Python version for scanner scripts."
+        required: false
+        default: "3.12"
+        type: string
+    secrets: {}
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+jobs:
+  codeql:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: php,javascript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze (SARIF output)
+        uses: github/codeql-action/analyze@v3
+        with:
+          output: codeql-results
+
+      - name: Archive CodeQL SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif
+          path: codeql-results/*.sarif
+          if-no-files-found: warn
+
+  security-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Resolve CMS preset
+        id: preset
+        shell: bash
+        run: |
+          cms_input="${{ inputs.cms }}"
+          if [[ "$cms_input" == "wordpress" ]]; then
+            preset="presets/wordpress.json"
+          elif [[ "$cms_input" == "drupal" ]]; then
+            preset="presets/drupal.json"
+          elif [[ -f "wp-config.php" || -d "wp-content" ]]; then
+            preset="presets/wordpress.json"
+          else
+            preset="presets/drupal.json"
+          fi
+          echo "preset=$preset" >> "$GITHUB_OUTPUT"
+
+      - name: Run Security Lab scan
+        run: |
+          python scripts/cms_security_lab_scan.py \
+            --root . \
+            --preset "${{ steps.preset.outputs.preset }}" \
+            --output security-lab-results.sarif
+
+      - name: Archive Security Lab SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-lab-sarif
+          path: security-lab-results.sarif
+
+  gate:
+    needs: [codeql, security-lab]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Download CodeQL SARIF
+        uses: actions/download-artifact@v4
+        with:
+          name: codeql-sarif
+          path: artifacts/codeql
+        continue-on-error: true
+
+      - name: Download Security Lab SARIF
+        uses: actions/download-artifact@v4
+        with:
+          name: security-lab-sarif
+          path: artifacts/security-lab
+
+      - name: Merge SARIF logs
+        shell: bash
+        run: |
+          inputs=(artifacts/security-lab/security-lab-results.sarif)
+          if compgen -G "artifacts/codeql/*.sarif" > /dev/null; then
+            for f in artifacts/codeql/*.sarif; do inputs+=("$f"); done
+          fi
+          python scripts/merge_sarif.py \
+            --input "${inputs[@]}" \
+            --output merged-results.sarif
+
+      - name: Upload merged SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: merged-results.sarif
+
+      - name: Enforce severity policy
+        run: |
+          python scripts/enforce_policy.py \
+            --input merged-results.sarif \
+            --fail-on-severity "${{ inputs.fail-on-severity }}"

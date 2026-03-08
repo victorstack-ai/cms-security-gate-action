@@ -1,0 +1,27 @@
+{
+  "name": "Drupal Security Preset",
+  "extensions": [".php", ".module", ".inc", ".yml"],
+  "rules": [
+    {
+      "id": "DR001",
+      "name": "Concatenated db_query SQL",
+      "description": "db_query with concatenated input can introduce SQL injection risks.",
+      "severity": "high",
+      "pattern": "db_query\\s*\\(\\s*\"[^\"]*\"\\s*\\."
+    },
+    {
+      "id": "DR002",
+      "name": "Open Access Route",
+      "description": "_access: 'TRUE' should be justified and usually replaced with explicit permissions.",
+      "severity": "medium",
+      "pattern": "_access:\\s*['\\\"]?TRUE['\\\"]?"
+    },
+    {
+      "id": "DR003",
+      "name": "Unescaped Superglobal Render",
+      "description": "Rendering superglobal values directly can cause XSS issues.",
+      "severity": "high",
+      "pattern": "(return|echo)\\s+\\$_(GET|POST|REQUEST)\\[[^\\]]+\\]"
+    }
+  ]
+}

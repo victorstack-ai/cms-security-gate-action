@@ -1,0 +1,27 @@
+{
+  "name": "WordPress Security Preset",
+  "extensions": [".php", ".js"],
+  "rules": [
+    {
+      "id": "WP001",
+      "name": "Unsafely Interpolated wpdb Query",
+      "description": "SQL string interpolation in $wpdb->query can allow injection.",
+      "severity": "high",
+      "pattern": "\\$wpdb->query\\s*\\(\\s*\"[^\"]*\\$[A-Za-z_]"
+    },
+    {
+      "id": "WP002",
+      "name": "Unescaped Superglobal Echo",
+      "description": "Direct echo of superglobal data should be escaped before output.",
+      "severity": "high",
+      "pattern": "echo\\s+\\$_(GET|POST|REQUEST)\\[[^\\]]+\\]"
+    },
+    {
+      "id": "WP003",
+      "name": "Nopriv AJAX Endpoint",
+      "description": "wp_ajax_nopriv handlers require explicit capability and nonce controls.",
+      "severity": "medium",
+      "pattern": "wp_ajax_nopriv_[A-Za-z0-9_]+"
+    }
+  ]
+}
