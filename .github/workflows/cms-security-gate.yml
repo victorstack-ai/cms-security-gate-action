@@ -18,7 +18,9 @@ on:
         required: false
         default: "3.12"
         type: string
-    secrets: {}
+    secrets:
+      openai-api-key:
+        required: false
 
 permissions:
   contents: read
@@ -132,6 +134,28 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: merged-results.sarif
+
+      - name: Generate remediation report
+        env:
+          OPENAI_API_KEY: ${{ secrets.openai-api-key }}
+        run: |
+          python scripts/generate_remediation_report.py \
+            --sarif merged-results.sarif \
+            --json-out security-remediation-report.json \
+            --markdown-out security-remediation-report.md \
+            --fail-on-severity "${{ inputs.fail-on-severity }}"
+
+      - name: Upload remediation report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-remediation-report
+          path: |
+            security-remediation-report.json
+            security-remediation-report.md
+
+      - name: Add remediation summary
+        run: |
+          cat security-remediation-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce severity policy
         run: |
